@@ -7,6 +7,7 @@ import { z } from "zod";
 import { createClient, ClientEvent, RoomEvent, MsgType, EventType, SyncState, type MatrixClient } from "matrix-js-sdk";
 import { logger as matrixLogger, Logger } from "matrix-js-sdk/lib/logger";
 import { type LoggingLevel } from "@modelcontextprotocol/sdk/types.js";
+import { Parser, HtmlRenderer } from "commonmark";
 
 // --- config ----------------------------------------------------------------
 // CLI selects the transport; Matrix creds come from the environment.
@@ -152,17 +153,28 @@ function waitForSync(client: MatrixClient): Promise<void> {
   });
 }
 
+// Render Markdown to the HTML subset Matrix expects (same CommonMark semantics
+// Element applies to what humans type). `safe: true` escapes raw HTML in the input.
+const md = new Parser();
+const html = new HtmlRenderer({ safe: true });
+const toHtml = (text: string): string => html.render(md.parse(text)).trim();
+
 mcp.registerTool(
   "reply",
   {
-    description: "Reply to the Matrix conversation.",
+    description: "Reply to the Matrix conversation. Markdown is rendered (bold, italic, code, lists, links…).",
     inputSchema: {
-      text: z.string().describe("The message to send"),
+      text: z.string().describe("The message to send (Markdown)"),
     },
   },
   async ({ text }: { text: string }) => {
     await client.sendTyping(roomId, false, 0);
-    await client.sendEvent(roomId, EventType.RoomMessage, { msgtype: MsgType.Text, body: text }, "");
+    await client.sendEvent(
+      roomId,
+      EventType.RoomMessage,
+      { msgtype: MsgType.Text, body: text, format: "org.matrix.custom.html", formatted_body: toHtml(text) },
+      "",
+    );
     return { content: [{ type: "text", text: "sent" }] };
   },
 );

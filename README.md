@@ -29,6 +29,7 @@ docker compose up -d
 ```
 
 This starts:
+
 - **continuwuity** — a Matrix homeserver on `http://localhost:8008` (open registration, **local dev only**)
 - **element-web** — a Matrix web client on `http://localhost:8080`
 
@@ -36,8 +37,8 @@ This starts:
 
 Open `http://localhost:8080`, register an account for the bot (e.g. `claude`), create a room, and note two things:
 
-- the **access token** — Element → *Settings → Help & About → Access Token*
-- the **room ID** (looks like `!abcd…:localhost`) — room *Settings → Advanced → Internal room ID*
+- the **access token** — Element → _Settings → Help & About → Access Token_
+- the **room ID** (looks like `!abcd…:localhost`) — room _Settings → Advanced → Internal room ID_
 
 Make sure the bot account is a **member of the room**.
 
@@ -45,12 +46,12 @@ Make sure the bot account is a **member of the room**.
 
 The server reads Matrix credentials from environment variables:
 
-| Variable | Required | Default |
-| --- | --- | --- |
-| `MATRIX_ACCESS_TOKEN` | ✅ | — |
-| `MATRIX_ROOM_ID` | ✅ | — |
-| `MATRIX_BASE_URL` | | `http://localhost:8008` |
-| `MATRIX_USER_ID` | | `@claude:localhost` |
+| Variable              | Required | Default                 |
+| --------------------- | -------- | ----------------------- |
+| `MATRIX_ACCESS_TOKEN` | ✅       | —                       |
+| `MATRIX_ROOM_ID`      | ✅       | —                       |
+| `MATRIX_BASE_URL`     |          | `http://localhost:8008` |
+| `MATRIX_USER_ID`      |          | `@claude:localhost`     |
 
 Quick check that it starts:
 

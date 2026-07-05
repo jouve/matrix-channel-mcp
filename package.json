@@ -7,11 +7,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "commonmark": "^0.31.2",
     "matrix-js-sdk": "^41.8.0",
     "zod": "^4.4.3"
   },
@@ -22,10 +23,11 @@
     "@eslint/js": "^10.0.1",
     "@eslint/json": "^2.0.1",
     "@eslint/markdown": "^8.0.3",
+    "@types/commonmark": "^0.27.10",
     "eslint": "^10.6.0",
     "globals": "^17.7.0",
     "jiti": "^2.7.0",
-    "prettier": "^3.9.4",
+    "oxfmt": "^0.57.0",
     "typescript-eslint": "^8.62.1"
   }
 }

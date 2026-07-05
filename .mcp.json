@@ -2,9 +2,7 @@
   "mcpServers": {
     "matrix": {
       "command": "bun",
-      "args": [
-        "server.ts"
-      ]
+      "args": ["server.ts"]
     }
   }
 }

@@ -112,7 +112,7 @@ class McpLogger implements Logger {
   }
 
   private emit(level: LoggingLevel, msg: unknown[]): void {
-    mcp.server.sendLoggingMessage({ level, logger: this.namespace, data: msg });
+    mcp.server.sendLoggingMessage({ level, logger: this.namespace, data: msg }).catch(() => {});
   }
 }
 

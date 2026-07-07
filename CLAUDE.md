@@ -4,18 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single-file MCP server (`server.ts`, run on Bun) that bridges **one** Matrix room to Claude Code's experimental `claude/channel` feature. Incoming Matrix text messages are pushed to the MCP client as `notifications/claude/channel`; the `reply` tool sends text back into the room. The other side of the conversation is a human in a Matrix client (e.g. Element), not the terminal session.
+A single-file MCP server (`server.py`, run on Python via uv) that bridges **one** Matrix room to Claude Code's experimental `claude/channel` feature. Incoming Matrix text messages are pushed to the MCP client as `notifications/claude/channel`; the `reply` tool sends text back into the room. The other side of the conversation is a human in a Matrix client (e.g. Element), not the terminal session.
+
+Built on the [`mcp`](https://github.com/modelcontextprotocol/python-sdk) SDK (`FastMCP`, with two hooks into its private `_mcp_server` — see Architecture) and [`mautrix`](https://github.com/mautrix/python) as the Matrix client.
 
 ## Commands
 
 ```bash
-bun server.ts                       # run, stdio transport (default)
-bun server.ts --transport http -p 3000   # run over Streamable HTTP instead
-bun server.ts --help                # usage + env vars
+uv run server.py                          # run, stdio transport (default)
+uv run server.py --transport http -p 3000 # run over Streamable HTTP instead
+uv run server.py --help                   # usage + env vars
 
-bun run typecheck                   # tsc --noEmit
-bun run lint                        # eslint .   (lint:fix to autofix)
-bun run format                      # prettier --write .   (format:check to verify)
+uv run ty check                     # type check
+uv run ruff check                   # lint    (--fix to autofix)
+uv run ruff format                  # format  (--check to verify)
 
 docker compose up -d                # local Matrix stack (see below)
 ```
@@ -33,25 +35,31 @@ Transport options come from CLI flags **or** env, with precedence **CLI flag > e
 - `--transport` / `MCP_TRANSPORT`: `stdio` (default) | `http`
 - `--port` / `MCP_PORT`: HTTP port (default 3000)
 
-Matrix creds come from env only (validated by zod at startup; the process `exit(1)`s on a bad/missing value):
+Matrix creds come from env only (validated by pydantic-settings `BaseSettings` at startup; the process `exit(1)`s on a bad/missing value):
 
 - `MATRIX_ACCESS_TOKEN` — **required**
 - `MATRIX_ROOM_ID` — **required**
 - `MATRIX_BASE_URL` — default `http://localhost:8008`
 - `MATRIX_USER_ID` — default `@claude:localhost`
 
-**Launching as an MCP server:** `.mcp.json` registers this as the `matrix` server (`bun server.ts`). The Matrix env must reach that subprocess. The reliable place is `.mcp.json`'s per-server `env` block, or the global `~/.claude/settings.json` `env`. (In practice, project `.claude/settings.local.json` `env` did **not** reliably propagate to the MCP subprocess — prefer the two above.)
+**Launching as an MCP server:** `.mcp.json` registers this as the `matrix` server (`uv run server.py`). The Matrix env must reach that subprocess. The reliable place is `.mcp.json`'s per-server `env` block, or the global `~/.claude/settings.json` `env`. (In practice, project `.claude/settings.local.json` `env` did **not** reliably propagate to the MCP subprocess — prefer the two above.)
 
 ## Architecture & non-obvious constraints
 
-Startup order in `server.ts` is deliberate: parse config → build `McpServer` → install the logger → create the Matrix client → register the `reply` tool → **connect the MCP transport, then** `startClient()` + wait for the initial sync → subscribe to the room timeline.
+`serve()` drives its own asyncio loop (via `asyncio.run` in `main`), deliberately in this order: create the Matrix client + timeline handler → **start Matrix first** (`get_joined_rooms()` membership check, then `client.start()`) → build `FastMCP` + install two internal hooks → register tools → `mcp.run_stdio_async()` / `mcp.run_streamable_http_async()`. Matrix comes up **before** the MCP transport so a bad token / non-membership fails fast, and messages arriving pre-connection are buffered (see `Outbound`).
 
-- **The MCP transport is connected _before_ the Matrix sync**, so matrix-js-sdk's startup logs already flow over the MCP channel. The server then requires the bot to be a member of `MATRIX_ROOM_ID` — it throws if `client.getRoom(roomId)` is null after sync.
-- **stdio mode: stdout is the JSON-RPC framing channel.** Nothing may write to stdout except the protocol, or the client drops the connection. This is why matrix-js-sdk logging is redirected (see logger note) and why `--help` is the one thing allowed on stdout — it writes there and `exit`s before any transport connects.
-- **matrix-js-sdk logging → MCP logging notifications.** `McpLogger implements Logger` forwards every level to `mcp.server.sendLoggingMessage`. It's both injected into `createClient({ logger })` (covers the client's own logs) **and** patched onto matrix's _global_ exported `logger` in place via `Object.assign` (covers the ~80% of log sites that `import { logger }` at module scope — the ESM binding can't be reassigned, but the object's methods can be overwritten, and children created afterward via `getChild` inherit it). Requires `capabilities.logging` on the server, else `sendLoggingMessage` is a silent no-op.
-- **Room subscription is on the `Room` object, not the client.** `room.on(RoomEvent.Timeline, …)` after sync — no need to filter by room id. A bounded FIFO `Set` (`SEEN_LIMIT`) dedupes re-emitted events (decryption / echo reconciliation arrive close in time); it is capped so it can't grow unbounded on a long-lived process.
+- **FastMCP, made to fit via two hooks on `mcp._mcp_server`.** FastMCP gives the easy tool ergonomics (`@mcp.tool()`, schema from signatures, `run_*_async`) but hides two things this server needs, so we reach into its private low-level `_mcp_server`:
+  1. **Experimental capability.** `experimental={"claude/channel": {}}` — FastMCP calls `create_initialization_options()` with no args, so we wrap that method (`setdefault` the capability). It's the one injection point.
+  2. **Spontaneous session capture.** The server pushes a **custom, non-standard** notification (`notifications/claude/channel`) **outside any tool call**; FastMCP only exposes the session inside a request. So we wrap the `ListToolsRequest` handler in `_mcp_server.request_handlers` to grab `request_context.session` at `tools/list` (fires right after `initialize`, before any Matrix message can need it) and rebind on each call (HTTP makes a new session per connection).
+  These are private-attribute pokes — the accepted cost of using FastMCP here. `mcp._mcp_server.version` is also set (FastMCP otherwise reports the SDK version).
+- **Spontaneous push = the `Outbound` holder.** Matrix messages arrive with no request in flight. `Outbound` holds the captured session's `send_message` and **buffers** anything sent before capture (or before an MCP client connects — Matrix starts first). Each push is a raw `JSONRPCNotification`.
+- **stdio mode: stdout is the JSON-RPC framing channel.** Nothing may write to stdout except the protocol, or the client drops the connection. mautrix logs via stdlib `logging` (namespace `mau`); with no handler configured they fall through to **stderr**, which is safe; FastMCP also logs to stderr. `--help` is the one thing on stdout — argparse writes it there and `exit`s before any transport. (There is intentionally **no** MCP logging bridge / `notifications/message`.)
+- **Only live events.** `client.ignore_first_sync = True` + `client.ignore_initial_sync = True` skip the backfill of the first/initial sync (the equivalent of waiting for js-sdk's `Prepared` before subscribing). The timeline handler filters by `room_id` and skips the bot's own messages. Edits are resolved natively by mautrix — `content.get_edit()` flags them and `content.body` already holds the corrected text; `content.get("m.mentions")` carries `user_ids`. (No `SEEN_LIMIT` dedup like the TS version: mautrix delivers each event once.)
 
-## Gotchas that will bite typecheck / builds
+## Gotchas that will bite lint / typecheck
 
-- **zod is deduped via `overrides` in `package.json`.** The MCP SDK depends on zod `^3.25 || ^4.0` and bun otherwise installs a **second, nested** zod v3 under the SDK; the SDK's `registerTool` types then resolve against that copy and reject the app's zod v4 schemas (`ZodString is not assignable to AnySchema`). `overrides.zod` + `bun install --force` collapses it to one zod v4. **Do not remove the override.** Verify with `find node_modules -path '*/zod/package.json'` — there must be exactly one.
-- **`tsconfig.json` is Bun-flavored** (`moduleResolution: bundler`, `types: ["bun"]`, `skipLibCheck`). `skipLibCheck` is load-bearing — without it, matrix-js-sdk's crypto-wasm `.d.ts` and the SDK's `.d.ts` throw ~100 errors unrelated to this code. Typecheck only via `bun run typecheck`, never bare `tsc` with default settings.
+- **`mautrix.util.markdown` needs `commonmark`**, which mautrix does **not** pull in itself (`import commonmark` at module load → `ModuleNotFoundError` otherwise). It's an explicit dependency in `pyproject.toml`; don't drop it.
+- **Matrix ids are pydantic-typed as mautrix NewTypes.** `MatrixSettings.room_id`/`user_id` use `RoomID`/`UserID` (not bare `str`) so `ty` accepts them at the mautrix call sites. `MatrixSettings()` needs a `# ty: ignore[missing-argument]` — `ty` can't see that pydantic-settings fills the required fields from env.
+- **Don't annotate the timeline handler with `mautrix.types.Event`.** `add_event_handler` expects `(Event) -> Awaitable`, but `Event` is a `NewType` over a **Union** — invalid in a type expression for strict checkers ("Variable not allowed in type expression"). Annotate `on_message(evt: MessageEvent)` and `cast(EventHandler, on_message)` at registration.
+- **`mcp` is pinned `>=1.27,<2`.** v2 is a rewrite (handlers in the constructor, `mcp_types`, different internals — including the private `_mcp_server` surface these hooks depend on); `uv sync` must not resolve v2.
+- **E501 is ignored in ruff** because the channel instructions and tool descriptions are deliberately long single-line prose strings.

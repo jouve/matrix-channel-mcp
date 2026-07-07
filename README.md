@@ -3,13 +3,13 @@
 A small [MCP](https://modelcontextprotocol.io) server that bridges **one Matrix room** to Claude Code's `claude/channel` feature. Send a message from Matrix (e.g. [Element](https://element.io)) and it reaches your Claude Code session; Claude answers back into the room. It's a way to talk to a running Claude Code session from your chat app.
 
 ```
-Matrix room  ⇄  server.ts (MCP)  ⇄  Claude Code
+Matrix room  ⇄  server.py (MCP)  ⇄  Claude Code
  (a human)                          (your session)
 ```
 
 ## Requirements
 
-- [Bun](https://bun.sh)
+- [uv](https://docs.astral.sh/uv/)
 - Docker + Docker Compose (only for the bundled local Matrix homeserver — skip if you already have one)
 
 ## Quick start
@@ -17,7 +17,7 @@ Matrix room  ⇄  server.ts (MCP)  ⇄  Claude Code
 ### 1. Install dependencies
 
 ```bash
-bun install
+uv sync
 ```
 
 ### 2. Start a Matrix homeserver
@@ -56,7 +56,7 @@ The server reads Matrix credentials from environment variables:
 Quick check that it starts:
 
 ```bash
-MATRIX_ACCESS_TOKEN=… MATRIX_ROOM_ID='!…' bun server.ts
+MATRIX_ACCESS_TOKEN=… MATRIX_ROOM_ID='!…' uv run server.py
 ```
 
 ### 5. Wire it into Claude Code
@@ -67,8 +67,8 @@ MATRIX_ACCESS_TOKEN=… MATRIX_ROOM_ID='!…' bun server.ts
 {
   "mcpServers": {
     "matrix": {
-      "command": "bun",
-      "args": ["server.ts"],
+      "command": "uv",
+      "args": ["run", "server.py"],
       "env": {
         "MATRIX_ACCESS_TOKEN": "…",
         "MATRIX_ROOM_ID": "!…"
@@ -87,16 +87,16 @@ Restart / reconnect the MCP server in Claude Code (`/mcp`). Now messages posted 
 Runs over stdio by default (what Claude Code uses). It can also serve over HTTP:
 
 ```bash
-bun server.ts --transport http --port 3000
-bun server.ts --help          # all options
+uv run server.py --transport http --port 3000
+uv run server.py --help          # all options
 ```
 
 ## Development
 
 ```bash
-bun run typecheck   # tsc --noEmit
-bun run lint        # eslint      (lint:fix to autofix)
-bun run format      # prettier    (format:check to verify)
+uv run ty check            # type check
+uv run ruff check          # lint       (--fix to autofix)
+uv run ruff format         # format     (--check to verify)
 ```
 
-See [CLAUDE.md](./CLAUDE.md) for the internal architecture and a few sharp edges (why the transport connects before sync, how logging is routed, and the zod version pin).
+See [CLAUDE.md](./CLAUDE.md) for the internal architecture and a few sharp edges (why Matrix starts before the MCP transport, and the two hooks into FastMCP's internals that make the experimental capability and spontaneous notifications work).

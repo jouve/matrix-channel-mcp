@@ -1,0 +1,12 @@
+apiVersion: v2
+name: continuwuity
+description: Continuwuity Matrix homeserver
+type: application
+version: 0.1.0
+appVersion: "latest"
+dependencies:
+  - name: common
+    repository: oci://registry-1.docker.io/bitnamicharts
+    version: 2.x.x
+    tags:
+      - bitnami-common

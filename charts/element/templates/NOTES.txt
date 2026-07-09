@@ -1,0 +1,16 @@
+Element Web deployed.
+
+Homeserver it talks to: {{ .Values.config.homeserverBaseUrl }}
+
+{{- if .Values.ingress.enabled }}
+
+Open it at:
+
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.hostname }}
+{{- else }}
+
+Port-forward to try it:
+
+  kubectl -n {{ include "common.names.namespace" . }} port-forward svc/{{ include "common.names.fullname" . }} 8080:{{ .Values.service.port }}
+  open http://localhost:8080
+{{- end }}

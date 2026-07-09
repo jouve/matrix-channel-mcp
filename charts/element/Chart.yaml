@@ -1,0 +1,12 @@
+apiVersion: v2
+name: element
+description: Element Web — Matrix client
+type: application
+version: 0.1.0
+appVersion: "latest"
+dependencies:
+  - name: common
+    repository: oci://registry-1.docker.io/bitnamicharts
+    version: 2.x.x
+    tags:
+      - bitnami-common

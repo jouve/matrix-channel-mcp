@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "common.names.fullname" . }}
+  namespace: {{ include "common.names.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" (dict "customLabels" .Values.commonLabels "context" $) | nindent 4 }}
+  {{- if .Values.commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" (dict "value" .Values.commonAnnotations "context" $) | nindent 4 }}
+  {{- end }}
+data:
+  config.json: |
+    {
+      "default_server_config": {
+        "m.homeserver": {
+          "base_url": {{ .Values.config.homeserverBaseUrl | quote }},
+          "server_name": {{ .Values.config.homeserverName | quote }}
+        }
+      },
+      "brand": {{ .Values.config.brand | quote }},
+      "disable_custom_urls": {{ .Values.config.disableCustomUrls }},
+      "disable_guests": {{ .Values.config.disableGuests }},
+      "default_theme": {{ .Values.config.defaultTheme | quote }},
+      "room_directory": {
+        "servers": {{ toJson .Values.config.roomDirectoryServers }}
+      }
+    }

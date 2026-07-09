@@ -1,0 +1,19 @@
+Continuwuity Matrix homeserver deployed.
+
+Server name: {{ .Values.config.serverName }}
+
+Reach it in-cluster at:
+
+  http://{{ include "common.names.fullname" . }}.{{ include "common.names.namespace" . }}.svc.cluster.local:{{ .Values.service.port }}
+
+Quick check:
+
+  kubectl -n {{ include "common.names.namespace" . }} port-forward svc/{{ include "common.names.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  curl http://localhost:{{ .Values.service.port }}/_matrix/client/versions
+
+{{- if .Values.config.allowRegistration }}
+{{- if not .Values.config.registrationToken }}
+
+WARNING: open registration is enabled (no registrationToken). Dev/local only.
+{{- end }}
+{{- end }}
